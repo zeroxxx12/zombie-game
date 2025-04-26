@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Zombie Fight Game</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: url('images/hhh.jpg');
+            background-size: cover;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        .menu {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: url('images/aaaaaaaaaaa.jpg') no-repeat center center/cover;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            backdrop-filter: blur(5px);
+        }
+        h1 {
+            font-size: 3rem;
+            text-shadow: 2px 2px 10px black;
+        }
+        select, button {
+            font-size: 1.2rem;
+            padding: 10px;
+            margin: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button {
+            background-color: red;
+            color: white;
+            font-weight: bold;
+        }
+        .hidden {
+            display: none;
+        }
+        canvas {
+            display: block;
+            background: transparent;
+        }
+        .score, .shots-remaining {
+            position: absolute;
+            font-size: 24px;
+            left: 10px;
+        }
+        .score { top: 10px; }
+        .shots-remaining { bottom: 10px; }
+        .game-over {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 30px;
+            text-align: center;
+        }
+        .reload {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: yellow;
+            display: none;
+        }
+
+        /* Hack Menu Styling */
+        #hackMenu {
+            position: absolute;
+            top: 50px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+            color: white;
+        }
+        #hackMenu label {
+            display: block;
+            margin: 5px 0;
+        }
+        #hackMenu input {
+            margin-right: 10px;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="menu" class="menu">
+        <h1>Zombie Fight</h1>
+        <label for="difficulty">Choose Difficulty:</label>
+        <select id="difficulty">
+            <option value="Easy">Easy</option>
+            <option value="Normal" selected>Normal</option>
+            <option value="Hard">Hard</option>
+        </select>
+        <button id="startGame">Start Game</button>
+    </div>
+
+    <canvas id="gameCanvas" class="hidden" tabindex="1"></canvas>
+
+    <div id="score" class="score">Score: 0</div>
+    <div id="shotsRemaining" class="shots-remaining">Shots Left: 30</div>
+    <div id="gameOver" class="game-over hidden">
+        <h2>Game Over</h2>
+        <p>Your Score: <span id="finalScore">0</span></p>
+        <button id="restartGame">Restart</button>
+    </div>
+    <div id="reload" class="reload">Reloading...</div>
+
+    <!-- Hack Menu -->
+    <div id="hackMenu">
+        <label><input type="checkbox" id="aimbot"> Aimbot</label>
+        <label><input type="checkbox" id="infiniteAmmo"> Infinite Ammo</label>
+        <label><input type="checkbox" id="noReload"> No Reload</label>
+        <label><input type="checkbox" id="noGameOver"> No Game Over</label>
+    </div>
+
+    <script>
+        class Game {
+            constructor() {
+                this.difficulty = 'Normal';
+                this.score = 0;
+                this.isReloading = false;
+                this.reloadTime = 3000;
+                this.shotCount = 30;
+                this.maxShots = 30;
+                this.shootingRate = 200;
+                this.lastShotTime = 0;
+                this.isShooting = false;
+                this.isGameOver = false;
+                this.aimbotEnabled = false;
+                this.infiniteAmmoEnabled = false;
+                this.noReloadEnabled = false;
+                this.noGameOverEnabled = false;
+                this.initMenu();
+            }
+
+            initMenu() {
+                document.getElementById('startGame').addEventListener('click', () => this.startGame());
+                document.getElementById('restartGame').addEventListener('click', () => this.restartGame());
+                window.addEventListener('keydown', (e) => this.keyDown(e)); // For opening hack menu
+                // Handle hack menu inputs
+                document.getElementById('aimbot').addEventListener('change', (e) => this.aimbotEnabled = e.target.checked);
+                document.getElementById('infiniteAmmo').addEventListener('change', (e) => this.infiniteAmmoEnabled = e.target.checked);
+                document.getElementById('noReload').addEventListener('change', (e) => this.noReloadEnabled = e.target.checked);
+                document.getElementById('noGameOver').addEventListener('change', (e) => this.noGameOverEnabled = e.target.checked);
+            }
+
+            startGame() {
+                this.difficulty = document.getElementById('difficulty').value;
+                document.getElementById('menu').style.display = 'none';
+                const canvas = document.getElementById('gameCanvas');
+                canvas.classList.remove('hidden');
+                document.getElementById('score').style.display = 'block';
+                document.getElementById('shotsRemaining').style.display = 'block';
+
+                canvas.focus(); // Focus canvas to receive key input
+
+                this.initGame(canvas);
+            }
+
+            restartGame() {
+                document.getElementById('gameOver').style.display = 'none';
+                document.getElementById('score').style.display = 'block';
+                document.getElementById('shotsRemaining').style.display = 'block';
+                document.getElementById('score').innerText = `Score: 0`;
+
+                this.score = 0;
+                this.shotCount = this.maxShots;
+                this.isGameOver = false;
+
+                this.startGame();
+            }
+
+            initGame(canvas) {
+                const ctx = canvas.getContext('2d');
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+
+                this.playerImage = new Image();
+                this.playerImage.src = 'images/player.png';
+
+                this.zombieImage = new Image();
+                this.zombieImage.src = 'images/zombie.png';
+
+                this.player = {
+                    x: 50,
+                    y: canvas.height / 2,
+                    width: 80,
+                    height: 80,
+                    speed: 5,
+                    hitboxWidth: 60,
+                    hitboxHeight: 60
+                };
+
+                this.bullets = [];
+                this.zombies = [];
+
+                this.mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+                this.keys = { left: false, right: false, up: false, down: false };
+
+                // Add event listeners
+                window.addEventListener('keydown', (e) => this.keyDown(e));
+                window.addEventListener('keyup', (e) => this.keyUp(e));
+                window.addEventListener('mousemove', (e) => this.mouseMove(e));
+                window.addEventListener('mousedown', () => this.startShooting());
+                window.addEventListener('mouseup', () => this.stopShooting());
+
+                this.gameLoop(ctx, canvas);
+            }
+
+            keyDown(e) {
+                if (e.key === 'p' || e.key === 'P') this.toggleHackMenu(); // Open/Close hack menu
+                if (e.key === 'a' || e.key === 'A') this.keys.left = true;
+                if (e.key === 'd' || e.key === 'D') this.keys.right = true;
+                if (e.key === 'w' || e.key === 'W') this.keys.up = true;
+                if (e.key === 's' || e.key === 'S') this.keys.down = true;
+                if (e.key === 'v' || e.key === 'V') {
+                    if (!this.isReloading) this.startReload();
+                }
+            }
+
+            keyUp(e) {
+                if (e.key === 'a' || e.key === 'a') this.keys.left = false;
+                if (e.key === 'd' || e.key === 'd') this.keys.right = false;
+                if (e.key === 'w' || e.key === 'w') this.keys.up = false;
+                if (e.key === 's' || e.key === 's') this.keys.down = false;
+            }
+
+            mouseMove(e) {
+                this.mouse.x = e.clientX;
+                this.mouse.y = e.clientY;
+            }
+
+            toggleHackMenu() {
+                const hackMenu = document.getElementById('hackMenu');
+                hackMenu.style.display = (hackMenu.style.display === 'none' || hackMenu.style.display === '') ? 'block' : 'none';
+            }
+
+            startShooting() {
+                this.isShooting = true;
+            }
+
+            stopShooting() {
+                this.isShooting = false;
+            }
+
+            shootBullet() {
+                if (this.shotCount <= 0 && !this.infiniteAmmoEnabled) return;
+
+                const now = Date.now();
+                if (now - this.lastShotTime < this.shootingRate) return;
+
+                this.lastShotTime = now;
+
+                let targetZombie = null;
+                if (this.aimbotEnabled && this.zombies.length > 0) {
+                    // Find nearest zombie
+                    targetZombie = this.zombies.reduce((nearest, zombie) => {
+                        const distanceToZombie = Math.sqrt(
+                            Math.pow(this.mouse.x - zombie.x, 2) + Math.pow(this.mouse.y - zombie.y, 2)
+                        );
+                        if (!nearest || distanceToZombie < nearest.distance) {
+                            return { zombie, distance: distanceToZombie };
+                        }
+                        return nearest;
+                    }, null);
+                }
+
+                const dx = targetZombie ? targetZombie.zombie.x - this.player.x : this.mouse.x - (this.player.x + this.player.width / 2);
+                const dy = targetZombie ? targetZombie.zombie.y - this.player.y : this.mouse.y - (this.player.y + this.player.height / 2);
+                const angle = Math.atan2(dy, dx);
+
+                this.bullets.push({
+                    x: this.player.x + this.player.width / 2,
+                    y: this.player.y + this.player.height / 2,
+                    width: 10,
+                    height: 10,
+                    speed: 7,
+                    angle: angle
+                });
+
+                if (!this.infiniteAmmoEnabled) this.shotCount--;
+                this.updateShotCountDisplay();
+            }
+
+            startReload() {
+                if (this.noReloadEnabled) return;
+
+                this.isReloading = true;
+                document.getElementById('reload').style.display = 'block';
+                setTimeout(() => {
+                    this.isReloading = false;
+                    this.shotCount = this.maxShots;
+                    this.updateShotCountDisplay();
+                    document.getElementById('reload').style.display = 'none';
+                }, this.reloadTime);
+            }
+
+            updateShotCountDisplay() {
+                document.getElementById('shotsRemaining').innerText = `Shots Left: ${this.shotCount}`;
+            }
+
+            movePlayer() {
+                if (this.keys.left && this.player.x > 0) this.player.x -= this.player.speed;
+                if (this.keys.right && this.player.x < window.innerWidth - this.player.width) this.player.x += this.player.speed;
+                if (this.keys.up && this.player.y > 0) this.player.y -= this.player.speed;
+                if (this.keys.down && this.player.y < window.innerHeight - this.player.height) this.player.y += this.player.speed;
+            }
+
+            moveBullets() {
+                this.bullets.forEach(bullet => {
+                    bullet.x += Math.cos(bullet.angle) * bullet.speed;
+                    bullet.y += Math.sin(bullet.angle) * bullet.speed;
+                });
+            }
+
+            moveZombies() {
+                this.zombies.forEach(zombie => {
+                    const dx = this.player.x - zombie.x;
+                    const dy = this.player.y - zombie.y;
+                    const angle = Math.atan2(dy, dx);
+                    zombie.x += Math.cos(angle) * zombie.speed;
+                    zombie.y += Math.sin(angle) * zombie.speed;
+                    if (this.checkCollision(this.player, zombie)) this.gameOver();
+                });
+            }
+
+            spawnZombie() {
+                this.zombies.push({
+                    x: window.innerWidth,
+                    y: Math.random() * window.innerHeight,
+                    width: 100,
+                    height: 100,
+                    speed: 2 + (this.difficulty === 'Hard' ? 2 : 0) + Math.random() * 3,
+                    color: 'red',
+                    health: 3,
+                    hitboxWidth: 70,
+                    hitboxHeight: 70
+                });
+            }
+
+            checkCollisions() {
+                this.bullets.forEach((bullet, index) => {
+                    this.zombies.forEach((zombie, zombieIndex) => {
+                        if (this.checkCollision(bullet, zombie)) {
+                            zombie.health--;
+                            this.bullets.splice(index, 1);
+                            if (zombie.health <= 0) {
+                                this.zombies.splice(zombieIndex, 1);
+                                this.score += 10;
+                            }
+                        }
+                    });
+                });
+            }
+
+            checkCollision(obj1, obj2) {
+                return obj1.x < obj2.x + obj2.hitboxWidth &&
+                       obj1.x + obj1.width > obj2.x &&
+                       obj1.y < obj2.y + obj2.hitboxHeight &&
+                       obj1.y + obj1.height > obj2.y;
+            }
+
+            gameOver() {
+                if (this.noGameOverEnabled) return;
+
+                document.getElementById('gameOver').style.display = 'block';
+                document.getElementById('finalScore').innerText = this.score;
+                document.getElementById('score').style.display = 'none';
+                document.getElementById('shotsRemaining').style.display = 'none';
+                this.isGameOver = true;
+            }
+
+            gameLoop(ctx, canvas) {
+                if (this.isGameOver) return;
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                this.movePlayer();
+                this.moveBullets();
+                this.moveZombies();
+                this.checkCollisions();
+
+                if (this.isShooting) this.shootBullet();
+
+                const dx = this.mouse.x - (this.player.x + this.player.width / 2);
+                const dy = this.mouse.y - (this.player.y + this.player.height / 2);
+                const angle = Math.atan2(dy, dx);
+
+                ctx.save();
+                ctx.translate(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2);
+                ctx.rotate(angle);
+                ctx.drawImage(this.playerImage, -this.player.width / 2, -this.player.height / 2, this.player.width, this.player.height);
+                ctx.restore();
+
+                this.bullets.forEach(bullet => {
+                    ctx.fillStyle = 'yellow';
+                    ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+                });
+
+                this.zombies.forEach(zombie => {
+                    ctx.drawImage(this.zombieImage, zombie.x, zombie.y, zombie.width, zombie.height);
+                    ctx.fillStyle = 'green';
+                    ctx.fillRect(zombie.x, zombie.y - 10, zombie.width * (zombie.health / 3), 5);
+                });
+
+                document.getElementById('score').innerText = `Score: ${this.score}`;
+
+                if (Math.random() < 0.02) this.spawnZombie();
+
+                requestAnimationFrame(() => this.gameLoop(ctx, canvas));
+            }
+        }
+
+        const game = new Game();
+
+    </script>
+</body>
+</html>
